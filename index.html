@@ -141,7 +141,14 @@
    automatisch ueber Firestore. Vorher laeuft alles rein lokal (wie bisher).
    -> firebaseConfig = { apiKey: "...", authDomain: "...", projectId: "...", ... };
 */
-const firebaseConfig = null;
+const firebaseConfig = {
+  apiKey: "AIzaSyBuvhLwnOlEpDVT96ARTVDoeMNi20CYS5M",
+  authDomain: "bvb-app-aa87d.firebaseapp.com",
+  projectId: "bvb-app-aa87d",
+  storageBucket: "bvb-app-aa87d.firebasestorage.app",
+  messagingSenderId: "265738680688",
+  appId: "1:265738680688:web:b8f7fb12363c1bf91e37b5"
+};
 
 let fsDB = null, fsReady = false;
 try{
