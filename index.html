@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="BVB">
+<meta name="theme-color" content="#0A0A0A">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>BVB Spielplan</title>
+<style>
+  :root{
+    --gelb:#FDE100;
+    --schwarz:#0A0A0A;
+    --karte:#1B1B1B;
+    --karte2:#242424;
+    --linie:#333;
+    --text:#F4F4F4;
+    --grau:#9C9C9C;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{background:var(--schwarz);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
+  body{padding-bottom:40px;}
+
+  header{background:var(--gelb);color:#000;padding:14px 16px 12px;
+    padding-top:calc(14px + env(safe-area-inset-top));}
+  header h1{font-size:22px;font-weight:900;font-style:italic;letter-spacing:.5px;line-height:1.05;}
+  header p{font-size:12px;font-weight:600;margin-top:2px;opacity:.75;}
+
+  .teamswitch{display:flex;background:#000;padding:10px 16px;gap:8px;}
+  .teamswitch button{flex:1;padding:10px 0;border:2px solid var(--gelb);background:transparent;
+    color:var(--gelb);font-weight:800;font-style:italic;font-size:15px;border-radius:6px;cursor:pointer;}
+  .teamswitch button.aktiv{background:var(--gelb);color:#000;}
+
+  .subtabs{display:flex;border-bottom:1px solid var(--linie);margin:0 16px;}
+  .subtabs button{flex:1;padding:12px 0 10px;background:none;border:none;color:var(--grau);
+    font-size:14px;font-weight:700;border-bottom:3px solid transparent;cursor:pointer;}
+  .subtabs button.aktiv{color:var(--gelb);border-bottom-color:var(--gelb);}
+
+  main{padding:16px;}
+
+  .hero{background:var(--gelb);color:#000;border-radius:10px;padding:14px 16px;margin-bottom:16px;}
+  .hero .etikett{font-size:11px;font-weight:800;letter-spacing:.5px;}
+  .hero .paarung{font-size:18px;font-weight:900;font-style:italic;line-height:1.2;margin:4px 0 2px;}
+  .hero .details{font-size:13px;font-weight:600;opacity:.8;}
+
+  .werkzeuge{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;}
+  .chip{padding:7px 12px;border-radius:20px;border:1px solid var(--linie);background:var(--karte);
+    color:var(--text);font-size:13px;font-weight:600;cursor:pointer;}
+  .chip.aktiv{background:var(--gelb);border-color:var(--gelb);color:#000;font-weight:800;}
+  .chip.aktion{margin-left:auto;border-color:var(--gelb);color:var(--gelb);}
+
+  .monat{font-size:12px;font-weight:800;color:var(--grau);letter-spacing:1px;
+    text-transform:uppercase;margin:18px 2px 8px;}
+  .spiel{background:var(--karte);border-radius:8px;padding:11px 12px;margin-bottom:8px;
+    display:flex;align-items:center;gap:10px;cursor:default;}
+  .spiel.klickbar{cursor:pointer;}
+  .spiel .datum{width:52px;flex-shrink:0;text-align:center;}
+  .spiel .datum .tag{font-size:15px;font-weight:800;}
+  .spiel .datum .zeit{font-size:11px;color:var(--grau);}
+  .spiel .mitte{flex:1;min-width:0;}
+  .spiel .gegner{font-size:15px;font-weight:700;line-height:1.25;}
+  .spiel .wett{font-size:11px;color:var(--grau);margin-top:2px;}
+  .spiel .erg{flex-shrink:0;min-width:52px;text-align:center;font-size:16px;font-weight:900;
+    background:var(--karte2);border-radius:6px;padding:7px 8px;}
+  .spiel .erg.offen{color:var(--grau);font-size:12px;font-weight:600;}
+  .spiel .erg.sieg{color:var(--gelb);}
+  .heimzeichen{font-size:10px;font-weight:800;color:#000;background:var(--gelb);
+    border-radius:3px;padding:1px 4px;vertical-align:2px;margin-left:6px;}
+  .ausw{background:var(--linie);color:var(--text);}
+
+  .hinweis{background:var(--karte);border-left:3px solid var(--gelb);border-radius:6px;
+    padding:10px 12px;font-size:13px;color:var(--grau);margin-bottom:14px;line-height:1.45;}
+  .fehler{border-left-color:#C0392B;}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th{color:var(--grau);font-weight:700;text-align:right;padding:8px 6px;border-bottom:1px solid var(--linie);font-size:11px;}
+  th.links,td.links{text-align:left;}
+  td{padding:9px 6px;border-bottom:1px solid #222;text-align:right;font-variant-numeric:tabular-nums;}
+  tr.bvb td{background:var(--gelb);color:#000;font-weight:800;}
+  tr.bvb td:first-child{border-radius:6px 0 0 6px;}
+  tr.bvb td:last-child{border-radius:0 6px 6px 0;}
+
+  .grossknopf{display:block;width:100%;text-align:center;background:var(--gelb);color:#000;
+    font-weight:900;font-style:italic;font-size:15px;padding:14px;border-radius:8px;
+    text-decoration:none;border:none;cursor:pointer;}
+
+  .editor{background:var(--karte2);border-radius:8px;padding:12px;margin:-4px 0 10px;}
+  .editor .zeile{display:flex;align-items:center;gap:8px;justify-content:center;}
+  .editor input[type=number]{width:64px;padding:10px;font-size:18px;font-weight:800;text-align:center;
+    background:var(--schwarz);color:var(--text);border:1px solid var(--linie);border-radius:6px;}
+  .editor .knoepfe{display:flex;gap:8px;margin-top:10px;}
+  .editor button{flex:1;padding:10px;border-radius:6px;border:none;font-weight:800;font-size:14px;cursor:pointer;}
+  .editor .speichern{background:var(--gelb);color:#000;}
+  .editor .loeschen{background:var(--karte);color:var(--grau);border:1px solid var(--linie);}
+
+  .formular{background:var(--karte);border-radius:8px;padding:14px;margin-bottom:14px;}
+  .formular label{display:block;font-size:12px;font-weight:700;color:var(--grau);margin:10px 0 4px;}
+  .formular input,.formular select{width:100%;padding:10px;font-size:15px;background:var(--schwarz);
+    color:var(--text);border:1px solid var(--linie);border-radius:6px;}
+  .formular .knoepfe{display:flex;gap:8px;margin-top:14px;}
+  .formular button{flex:1;padding:11px;border-radius:6px;border:none;font-weight:800;font-size:14px;cursor:pointer;}
+  .formular .speichern{background:var(--gelb);color:#000;}
+  .formular .abbrechen{background:var(--karte2);color:var(--grau);}
+
+  .lade{text-align:center;color:var(--grau);padding:30px 0;font-size:14px;}
+  .stand{text-align:center;color:var(--grau);font-size:11px;margin-top:14px;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>BORUSSIA DORTMUND</h1>
+  <p>Spielplan &amp; Ergebnisse · Saison 2026/27</p>
+</header>
+
+<div class="teamswitch">
+  <button id="btnHerren" class="aktiv" onclick="setTeam('herren')">HERREN</button>
+  <button id="btnDamen" onclick="setTeam('damen')">DAMEN</button>
+</div>
+
+<div class="subtabs">
+  <button id="tabSpiele" class="aktiv" onclick="setTab('spiele')">Spielplan</button>
+  <button id="tabTabelle" onclick="setTab('tabelle')">Tabelle</button>
+</div>
+
+<main id="inhalt"><div class="lade">Lade …</div></main>
+
+<script>
+/* ================= Zustand ================= */
+let team='herren', tab='spiele', wettFilter='alle';
+let herrenSpiele=null, herrenTabelle=null, herrenFehler=false;
+let ladeText='Lade Spielplan …', quelleClaude=false, fehlerDetail='';
+let damenErgebnisse={}, damenExtra=[], offenerEditor=null, formularOffen=false;
+const mem={};
+
+/* ================= Speicher (window.storage -> localStorage -> RAM) ================= */
+async function speichern(key,val){
+  const s=JSON.stringify(val); mem[key]=s;
+  try{ if(window.storage){ await window.storage.set(key,s); return; } }catch(e){}
+  try{ localStorage.setItem(key,s); }catch(e){}
+}
+async function laden(key){
+  try{ if(window.storage){ const r=await window.storage.get(key); if(r&&r.value)return JSON.parse(r.value); } }catch(e){}
+  try{ const v=localStorage.getItem(key); if(v)return JSON.parse(v); }catch(e){}
+  if(mem[key])return JSON.parse(mem[key]);
+  return null;
+}
+
+/* ================= Damen: fester Spielplan (Stand 01.09.2026) ================= */
+const WETT={RL:'Regionalliga West',WP:'Westfalenpokal'};
+const damenBasis=[
+ {id:'d01',comp:'RL',dt:'2026-08-30T15:00',heim:'SSV Rhade',gast:'Borussia Dortmund'},
+ {id:'d02',comp:'RL',dt:'2026-09-06T15:00',heim:'Borussia Dortmund',gast:'DJK Wacker Mecklenbeck'},
+ {id:'d03',comp:'WP',dt:'2026-09-09T19:00',heim:'Borussia Dortmund',gast:'1. FFC Recklinghausen'},
+ {id:'d04',comp:'RL',dt:'2026-09-13T15:30',heim:'MSV Duisburg',gast:'Borussia Dortmund'},
+ {id:'d05',comp:'RL',dt:'2026-09-20T15:00',heim:'SV Fortuna Freudenberg',gast:'Borussia Dortmund'},
+ {id:'d06',comp:'RL',dt:'2026-09-27T15:00',heim:'Borussia Dortmund',gast:'FSV Gütersloh'},
+ {id:'d07',comp:'RL',dt:'2026-10-04T15:30',heim:'DJK Südwest Köln',gast:'Borussia Dortmund'},
+ {id:'d08',comp:'RL',dt:'2026-10-11T15:00',heim:'Borussia Dortmund',gast:'Rhenania Bottrop'},
+ {id:'d09',comp:'RL',dt:'2026-10-18T15:00',heim:'Vorwärts Spoho Köln',gast:'Borussia Dortmund'},
+ {id:'d10',comp:'RL',dt:'2026-10-25T15:00',heim:'Borussia Dortmund',gast:'SGS Essen U21'},
+ {id:'d11',comp:'RL',dt:'2026-11-08T13:00',heim:'SC Fortuna Köln',gast:'Borussia Dortmund'}
+];
+const DAMEN_TABELLE_URL='https://www.fussball.de/spieltagsuebersicht/frauen-regionalliga-west-deutschland-frauen-regionalliga-west-frauen-saison2627-deutschland/-/staffel/031C36DAM8000003VS5489BUVUR5FS5A-G';
+
+/* ================= Herren: OpenLigaDB ================= */
+async function fetchTimeout(url,ms){
+  const c=new AbortController();
+  const t=setTimeout(()=>c.abort(),ms);
+  try{ const r=await fetch(url,{signal:c.signal}); if(!r.ok)throw new Error('HTTP '+r.status); return await r.json(); }
+  finally{ clearTimeout(t); }
+}
+
+async function ladeHerren(){
+  herrenFehler=false; herrenSpiele=null; herrenTabelle=null; quelleClaude=false;
+  ladeText='Lade Spielplan …'; render();
+  try{
+    const [bl,pokal,tabelle]=await Promise.all([
+      fetchTimeout('https://api.openligadb.de/getmatchdata/bl1/2026',8000),
+      fetchTimeout('https://api.openligadb.de/getmatchdata/dfb/2026',8000).catch(()=>[]),
+      fetchTimeout('https://api.openligadb.de/getbltable/bl1/2026',8000)
+    ]);
+    const istBVB=m=>(m.team1?.teamName||'').includes('Dortmund')||(m.team2?.teamName||'').includes('Dortmund');
+    const mapMatch=(m,comp)=>{
+      const end=(m.matchResults||[]).find(r=>r.resultTypeID===2)||(m.matchResults||[])[0];
+      return {comp,dt:m.matchDateTime,heim:m.team1.teamName,gast:m.team2.teamName,
+        fertig:!!m.matchIsFinished,pH:end?end.pointsTeam1:null,pG:end?end.pointsTeam2:null};
+    };
+    herrenSpiele=[
+      ...(Array.isArray(bl)?bl:[]).filter(istBVB).map(m=>mapMatch(m,'BL')),
+      ...(Array.isArray(pokal)?pokal:[]).filter(istBVB).map(m=>mapMatch(m,'PO'))
+    ].sort((a,b)=>new Date(a.dt)-new Date(b.dt));
+    herrenTabelle=Array.isArray(tabelle)?tabelle:null;
+  }catch(e){
+    try{ await claudeAbruf(); }
+    catch(e2){ herrenFehler=true; fehlerDetail=(e2&&e2.message)?e2.message:''; }
+  }
+  render();
+}
+
+/* Zweiter Datenweg: funktioniert innerhalb der Claude-App, wo externe APIs blockiert sind */
+async function claudeFrage(prompt){
+  const resp=await fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,
+      messages:[{role:'user',content:prompt}],
+      tools:[{type:'web_search_20250305',name:'web_search'}]})});
+  if(!resp.ok)throw new Error('API HTTP '+resp.status);
+  const data=await resp.json();
+  if(data.type==='error')throw new Error('API: '+(data.error?.message||'unbekannt'));
+  const text=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
+  const clean=text.replace(/```json|```/g,'').trim();
+  const start=clean.indexOf('{');
+  if(start<0)throw new Error('keine Daten in Antwort');
+  return JSON.parse(clean.slice(start,clean.lastIndexOf('}')+1));
+}
+
+async function claudeAbruf(){
+  ladeText='Hole Live-Daten über Claude – das dauert einen Moment …'; render();
+  const pSpiele=claudeFrage('Suche im Web die Pflichtspiele von Borussia Dortmund (Herren, Fussball, Saison 2026/27): die letzten 5 gespielten Spiele mit Ergebnis und die naechsten 5 kommenden Spiele. Bundesliga=BL, DFB-Pokal=PO. Antworte NUR mit kompaktem JSON, kein Markdown, kein sonstiger Text: {"spiele":[{"comp":"BL","dt":"2026-09-12T15:30","heim":"Borussia Dortmund","gast":"...","fertig":true,"pH":2,"pG":1}]} Kommende Spiele: "fertig":false,"pH":null,"pG":null.');
+  const pTabelle=claudeFrage('Suche im Web die aktuelle Tabelle der Fussball-Bundesliga Saison 2026/27 (alle 18 Vereine). Antworte NUR mit kompaktem JSON, kein Markdown, kein sonstiger Text: {"tabelle":[{"teamName":"...","matches":2,"goals":5,"opponentGoals":1,"goalDiff":4,"points":6}]}').catch(()=>null);
+  const j=await pSpiele;
+  herrenSpiele=(j.spiele||[]).map(s=>({comp:s.comp==='PO'?'PO':'BL',dt:s.dt,heim:s.heim,gast:s.gast,
+    fertig:!!s.fertig,pH:s.pH??null,pG:s.pG??null}))
+    .sort((a,b)=>new Date(a.dt)-new Date(b.dt));
+  const t=await pTabelle;
+  herrenTabelle=(t&&t.tabelle&&t.tabelle.length)?t.tabelle:null;
+  quelleClaude=true;
+}
+
+/* ================= Hilfen ================= */
+const MONATE=['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+const TAGE=['So','Mo','Di','Mi','Do','Fr','Sa'];
+function fmtTag(d){return TAGE[d.getDay()]+' '+String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')+'.';}
+function fmtZeit(d){return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function istBVBName(n){return n.includes('Dortmund');}
+
+function damenAlle(){
+  return [...damenBasis,...damenExtra].sort((a,b)=>new Date(a.dt)-new Date(b.dt));
+}
+
+/* ================= Steuerung ================= */
+function setTeam(t){team=t;wettFilter='alle';offenerEditor=null;formularOffen=false;
+  document.getElementById('btnHerren').classList.toggle('aktiv',t==='herren');
+  document.getElementById('btnDamen').classList.toggle('aktiv',t==='damen');
+  render();
+}
+function setTab(t){tab=t;offenerEditor=null;formularOffen=false;
+  document.getElementById('tabSpiele').classList.toggle('aktiv',t==='spiele');
+  document.getElementById('tabTabelle').classList.toggle('aktiv',t==='tabelle');
+  render();
+}
+function setFilter(f){wettFilter=f;render();}
+function toggleEditor(id){offenerEditor=(offenerEditor===id?null:id);render();}
+function toggleFormular(){formularOffen=!formularOffen;render();}
+
+async function ergebnisSpeichern(id){
+  const h=document.getElementById('inH').value, g=document.getElementById('inG').value;
+  if(h===''||g===''){alert('Bitte beide Tore eintragen.');return;}
+  damenErgebnisse[id]={h:parseInt(h,10),g:parseInt(g,10)};
+  await speichern('bvb_damen_ergebnisse',damenErgebnisse);
+  offenerEditor=null;render();
+}
+async function ergebnisLoeschen(id){
+  delete damenErgebnisse[id];
+  await speichern('bvb_damen_ergebnisse',damenErgebnisse);
+  offenerEditor=null;render();
+}
+async function spielHinzufuegen(){
+  const d=document.getElementById('fDatum').value, z=document.getElementById('fZeit').value||'15:00';
+  const heim=document.getElementById('fHeim').value.trim(), gast=document.getElementById('fGast').value.trim();
+  const comp=document.getElementById('fWett').value;
+  if(!d||!heim||!gast){alert('Bitte Datum, Heim und Gast ausfüllen.');return;}
+  damenExtra.push({id:'x'+Date.now(),comp,dt:d+'T'+z,heim,gast,extra:true});
+  await speichern('bvb_damen_extra',damenExtra);
+  formularOffen=false;render();
+}
+async function spielEntfernen(id){
+  if(!confirm('Dieses Spiel entfernen?'))return;
+  damenExtra=damenExtra.filter(s=>s.id!==id);
+  delete damenErgebnisse[id];
+  await speichern('bvb_damen_extra',damenExtra);
+  await speichern('bvb_damen_ergebnisse',damenErgebnisse);
+  render();
+}
+
+/* ================= Darstellung ================= */
+function heroHTML(spiele){
+  const jetzt=new Date();
+  const n=spiele.find(s=>new Date(s.dt)>jetzt&&(team==='herren'?!s.fertig:!damenErgebnisse[s.id]));
+  if(!n)return '';
+  const d=new Date(n.dt);
+  const heimspiel=istBVBName(n.heim);
+  const gegner=heimspiel?n.gast:n.heim;
+  const tage=Math.ceil((d-jetzt)/86400000);
+  const wett=team==='herren'?(n.comp==='BL'?'Bundesliga':'DFB-Pokal'):WETT[n.comp];
+  return `<div class="hero">
+    <div class="etikett">NÄCHSTES SPIEL · ${tage<=0?'HEUTE':(tage===1?'MORGEN':'IN '+tage+' TAGEN')}</div>
+    <div class="paarung">${heimspiel?'BVB – '+esc(gegner):esc(gegner)+' – BVB'}</div>
+    <div class="details">${fmtTag(d)} · ${fmtZeit(d)} Uhr · ${wett} · ${heimspiel?'Heim':'Auswärts'}</div>
+  </div>`;
+}
+
+function spielZeile(s){
+  const d=new Date(s.dt);
+  const heimspiel=istBVBName(s.heim);
+  const gegner=heimspiel?s.gast:s.heim;
+  const wett=team==='herren'?(s.comp==='BL'?'Bundesliga':'DFB-Pokal'):WETT[s.comp];
+  let ergHtml, klasse='offen', klickbar='';
+  if(team==='herren'){
+    if(s.fertig&&s.pH!==null){
+      const bvbTore=heimspiel?s.pH:s.pG, gegTore=heimspiel?s.pG:s.pH;
+      klasse=bvbTore>gegTore?'sieg':'';
+      ergHtml=s.pH+':'+s.pG;
+    }else ergHtml='–:–';
+  }else{
+    klickbar='klickbar';
+    const e=damenErgebnisse[s.id];
+    if(e){
+      const bvbTore=heimspiel?e.h:e.g, gegTore=heimspiel?e.g:e.h;
+      klasse=bvbTore>gegTore?'sieg':'';
+      ergHtml=e.h+':'+e.g;
+    }else ergHtml=new Date(s.dt)<new Date()?'eintragen':'–:–';
+  }
+  const marke=`<span class="heimzeichen ${heimspiel?'':'ausw'}">${heimspiel?'H':'A'}</span>`;
+  let html=`<div class="spiel ${klickbar}" ${team==='damen'?`onclick="toggleEditor('${s.id}')"`:''}>
+    <div class="datum"><div class="tag">${fmtTag(d)}</div><div class="zeit">${fmtZeit(d)}</div></div>
+    <div class="mitte"><div class="gegner">${esc(gegner)}${marke}</div><div class="wett">${wett}</div></div>
+    <div class="erg ${klasse}">${ergHtml}</div>
+  </div>`;
+  if(team==='damen'&&offenerEditor===s.id){
+    const e=damenErgebnisse[s.id]||{h:'',g:''};
+    html+=`<div class="editor">
+      <div class="zeile"><span style="font-size:13px;font-weight:700">${esc(s.heim)}</span>
+      <input type="number" id="inH" min="0" value="${e.h}"> : <input type="number" id="inG" min="0" value="${e.g}">
+      <span style="font-size:13px;font-weight:700">${esc(s.gast)}</span></div>
+      <div class="knoepfe">
+        <button class="speichern" onclick="ergebnisSpeichern('${s.id}')">Ergebnis speichern</button>
+        ${damenErgebnisse[s.id]?`<button class="loeschen" onclick="ergebnisLoeschen('${s.id}')">Löschen</button>`:''}
+        ${s.extra?`<button class="loeschen" onclick="spielEntfernen('${s.id}')">Spiel entfernen</button>`:''}
+      </div>
+    </div>`;
+  }
+  return html;
+}
+
+function spielListe(spiele){
+  let html='', letzterMonat='';
+  for(const s of spiele){
+    const d=new Date(s.dt);
+    const m=MONATE[d.getMonth()]+' '+d.getFullYear();
+    if(m!==letzterMonat){html+=`<div class="monat">${m}</div>`;letzterMonat=m;}
+    html+=spielZeile(s);
+  }
+  return html||'<div class="lade">Keine Spiele gefunden.</div>';
+}
+
+function render(){
+  const el=document.getElementById('inhalt');
+  /* ---- HERREN ---- */
+  if(team==='herren'){
+    if(tab==='tabelle'){
+      if(herrenFehler){el.innerHTML='<div class="hinweis fehler">Live-Daten konnten nicht geladen werden. Prüfe die Internetverbindung und tippe auf „Aktualisieren“ im Spielplan.</div>';return;}
+      if(!herrenTabelle){
+        el.innerHTML=herrenSpiele
+          ?'<div class="hinweis">Tabelle konnte über diesen Datenweg nicht geladen werden. Tippe im Spielplan auf „Aktualisieren", um es erneut zu versuchen.</div>'
+          :'<div class="lade">'+ladeText+'</div>';
+        return;
+      }
+      let rows=herrenTabelle.map((t,i)=>`<tr class="${(t.teamName||'').includes('Dortmund')?'bvb':''}">
+        <td>${i+1}</td><td class="links">${esc(t.teamName)}</td><td>${t.matches}</td>
+        <td>${t.goals}:${t.opponentGoals}</td><td>${t.goalDiff}</td><td><b>${t.points}</b></td></tr>`).join('');
+      el.innerHTML=`<table><tr><th>#</th><th class="links">Verein</th><th>Sp</th><th>Tore</th><th>Diff</th><th>Pkt</th></tr>${rows}</table>
+        <div class="stand">Bundesliga 2026/27</div><div class="stand">Quelle: '+(quelleClaude?'Websuche über Claude':'OpenLigaDB')+'</div>`;
+      return;
+    }
+    if(herrenFehler){el.innerHTML=`<div class="hinweis fehler">Live-Daten konnten nicht geladen werden.${fehlerDetail?' Fehler: '+esc(fehlerDetail):''}</div>
+      <button class="grossknopf" onclick="ladeHerren()">Erneut versuchen</button>`;return;}
+    if(!herrenSpiele){el.innerHTML='<div class="lade">'+ladeText+'</div>';return;}
+    const gefiltert=herrenSpiele.filter(s=>wettFilter==='alle'||s.comp===wettFilter);
+    el.innerHTML=heroHTML(herrenSpiele)+
+      `<div class="werkzeuge">
+        <button class="chip ${wettFilter==='alle'?'aktiv':''}" onclick="setFilter('alle')">Alle</button>
+        <button class="chip ${wettFilter==='BL'?'aktiv':''}" onclick="setFilter('BL')">Bundesliga</button>
+        <button class="chip ${wettFilter==='PO'?'aktiv':''}" onclick="setFilter('PO')">DFB-Pokal</button>
+        <button class="chip aktion" onclick="ladeHerren()">↻ Aktualisieren</button>
+      </div>`+spielListe(gefiltert)+
+      '<div class="stand">Live-Daten: OpenLigaDB</div>';
+    return;
+  }
+  /* ---- DAMEN ---- */
+  if(tab==='tabelle'){
+    el.innerHTML=`<div class="hinweis">Für die Frauen-Regionalliga West gibt es keine kostenlosen Live-Daten. Die aktuelle Tabelle findest du direkt bei fussball.de:</div>
+      <a class="grossknopf" href="${DAMEN_TABELLE_URL}" target="_blank" rel="noopener">Tabelle auf fussball.de öffnen</a>`;
+    return;
+  }
+  const alle=damenAlle().filter(s=>wettFilter==='alle'||s.comp===wettFilter);
+  el.innerHTML=heroHTML(damenAlle())+
+    `<div class="werkzeuge">
+      <button class="chip ${wettFilter==='alle'?'aktiv':''}" onclick="setFilter('alle')">Alle</button>
+      <button class="chip ${wettFilter==='RL'?'aktiv':''}" onclick="setFilter('RL')">Regionalliga</button>
+      <button class="chip ${wettFilter==='WP'?'aktiv':''}" onclick="setFilter('WP')">Pokal</button>
+      <button class="chip aktion" onclick="toggleFormular()">+ Spiel</button>
+    </div>
+    <div class="hinweis">Spiel antippen, um ein Ergebnis einzutragen. Neue Termine (z.&nbsp;B. Rückrunde) fügst du über „+ Spiel" hinzu.</div>`+
+    (formularOffen?`<div class="formular">
+      <label>Datum</label><input type="date" id="fDatum">
+      <label>Uhrzeit</label><input type="time" id="fZeit" value="15:00">
+      <label>Heimmannschaft</label><input type="text" id="fHeim" placeholder="z. B. Borussia Dortmund">
+      <label>Gastmannschaft</label><input type="text" id="fGast" placeholder="z. B. FC Schalke 04">
+      <label>Wettbewerb</label><select id="fWett"><option value="RL">Regionalliga West</option><option value="WP">Westfalenpokal</option></select>
+      <div class="knoepfe"><button class="speichern" onclick="spielHinzufuegen()">Hinzufügen</button>
+      <button class="abbrechen" onclick="toggleFormular()">Abbrechen</button></div>
+    </div>`:'')+
+    spielListe(alle)+
+    '<div class="stand">Spielplan Stand 01.09.2026 · Quelle: fussball.de</div>';
+}
+
+/* ================= Start ================= */
+(async function(){
+  damenErgebnisse=(await laden('bvb_damen_ergebnisse'))||{};
+  damenExtra=(await laden('bvb_damen_extra'))||[];
+  render();
+  ladeHerren();
+})();
+</script>
+</body>
+</html>
