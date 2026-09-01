@@ -162,7 +162,7 @@ try{
 /* ================= Team-Definitionen ================= */
 const TEAMS = {
   herren: {label:'HERREN', mode:'live'},
-  damen: {label:'DAMEN', mode:'manual',
+  damen: {label:'DAMEN', mode:'manual', searchName:'Borussia Dortmund (Frauen), Frauen-Regionalliga West',
     comps:{RL:'Regionalliga West', WP:'Westfalenpokal'},
     tableUrl:'https://www.fussball.de/spieltagsuebersicht/frauen-regionalliga-west-deutschland-frauen-regionalliga-west-frauen-saison2627-deutschland/-/staffel/031C36DAM8000003VS5489BUVUR5FS5A-G',
     schedule:[
@@ -178,7 +178,7 @@ const TEAMS = {
       {id:'d10',comp:'RL',dt:'2026-10-25T15:00',heim:'Borussia Dortmund',gast:'SGS Essen U21'},
       {id:'d11',comp:'RL',dt:'2026-11-08T13:00',heim:'SC Fortuna Köln',gast:'Borussia Dortmund'}
     ]},
-  u23: {label:'U23', mode:'manual',
+  u23: {label:'U23', mode:'manual', searchName:'Borussia Dortmund U23, Regionalliga West Herren',
     comps:{RL:'Regionalliga West'},
     tableUrl:'https://www.fussball.de/spieltagsuebersicht/regionalliga-west-deutschland-regionalliga-west-herren-saison2627-deutschland/-/staffel/031253DN8G000005VS5489BTVT51B5B5-G',
     schedule:[
@@ -194,7 +194,7 @@ const TEAMS = {
       {id:'u23_10',comp:'RL',dt:'2026-10-17T14:00',heim:'SC Wiedenbrück',gast:'Borussia Dortmund U23'},
       {id:'u23_11',comp:'RL',dt:'2026-10-24T14:00',heim:'Borussia Dortmund U23',gast:'Bonner SC'}
     ]},
-  u19: {label:'U19', mode:'manual',
+  u19: {label:'U19', mode:'manual', searchName:'Borussia Dortmund U19 (A-Junioren), U19-Bundesliga',
     comps:{BL:'A-Junioren-Bundesliga'},
     tableUrl:'https://www.fussball.de/spieltagsuebersicht/vorrunde-gruppe-h--u19-dfb-nachwuchsliga-deutschland-a-junioren-bundesliga-a-junioren-saison2627-deutschland/-/staffel/031983L5AO00000JVS5489BUVV628VP4-G',
     schedule:[
@@ -208,7 +208,7 @@ const TEAMS = {
       {id:'u19_08',comp:'BL',dt:'2026-11-21T11:00',heim:'Rot-Weiss Essen',gast:'Borussia Dortmund'},
       {id:'u19_09',comp:'BL',dt:'2026-11-29T11:00',heim:'Borussia Dortmund',gast:'Fortuna Düsseldorf'}
     ]},
-  u17: {label:'U17', mode:'manual',
+  u17: {label:'U17', mode:'manual', searchName:'Borussia Dortmund U17 (B-Junioren), U17-Bundesliga',
     comps:{BL:'B-Junioren-Bundesliga', PO:'Regionalpokal'},
     tableUrl:'https://www.fussball.de/spieltagsuebersicht/vorrunde-gruppe-g--u17-dfb-nachwuchsliga-deutschland-b-junioren-bundesliga-b-junioren-saison2627-deutschland/-/staffel/031984MJUO00000OVS5489BUVV628VP4-G',
     schedule:[
@@ -222,7 +222,7 @@ const TEAMS = {
       {id:'u17_08',comp:'BL',dt:'2026-10-18T11:00',heim:'Borussia Dortmund',gast:'VfL Bochum 1848'},
       {id:'u17_09',comp:'BL',dt:'2026-10-25T11:00',heim:'Borussia Dortmund',gast:'MSV Duisburg'}
     ]},
-  frauen2: {label:'FRAUEN II', mode:'manual',
+  frauen2: {label:'FRAUEN II', mode:'manual', searchName:'Borussia Dortmund II (Frauen), Frauen-Westfalenliga',
     comps:{VL:'Westfalenliga'},
     tableUrl:'https://www.fussball.de/spieltagsuebersicht/frauen-westfalenliga-westfalen-frauen-verbandsliga-frauen-saison2627-westfalen/-/staffel/0314GURVOK000012VS5489BUVSBBVPEU-G',
     schedule:[
@@ -246,6 +246,7 @@ let team='herren', tab='spiele', wettFilter='alle';
 let herrenSpiele=null, herrenTabelle=null, herrenFehler=false;
 let ladeText='Lade Spielplan …', quelleClaude=false, fehlerDetail='';
 let ergebnisseData={}, extraData={}, offenerEditor=null, formularOffen=false;
+let manualLade=false, manualStatus='', manualFehler='';
 const mem={};
 
 /* ================= Speicher: Firestore (falls konfiguriert) + localStorage ================= */
@@ -353,6 +354,32 @@ function alleSpieleFuer(key){
   return [...cfg.schedule,...(extraData[key]||[])].sort((a,b)=>new Date(a.dt)-new Date(b.dt));
 }
 
+/* ================= Ergebnisse für manuelle Teams per Claude-Websuche nachtragen ================= */
+async function ergebnisseAktualisieren(){
+  const key=team;
+  const cfg=TEAMS[key];
+  const offene=alleSpieleFuer(key).filter(s=>new Date(s.dt)<new Date() && !ergebnisseData[key][s.id]);
+  if(offene.length===0){ manualStatus='Keine offenen Spiele – schon alles eingetragen.'; manualFehler=''; render(); return; }
+  manualLade=true; manualStatus=''; manualFehler=''; render();
+  try{
+    const liste=offene.map(s=>`${s.id} | ${s.dt.slice(0,10)} | ${s.heim} vs ${s.gast}`).join('\n');
+    const prompt=`Suche auf fussball.de die Ergebnisse folgender bereits gespielter Fussballspiele der Mannschaft "${cfg.searchName}" (Saison 2026/27). Gib nur Spiele an, zu denen du ein bestätigtes Ergebnis findest; unbekannte Spiele auslassen.\n\nSpiele (Format: ID | Datum | Heim vs Gast):\n${liste}\n\nAntworte NUR mit kompaktem JSON, kein Markdown, kein sonstiger Text: {"ergebnisse":[{"id":"...","h":2,"g":1}]} h = Tore der zuerst genannten (Heim-)Mannschaft, g = Tore der Gastmannschaft.`;
+    const j=await claudeFrage(prompt);
+    let neu=0;
+    for(const e of (j.ergebnisse||[])){
+      if(!e||!e.id||ergebnisseData[key][e.id]) continue;
+      if(typeof e.h!=='number'||typeof e.g!=='number') continue;
+      ergebnisseData[key][e.id]={h:e.h,g:e.g};
+      neu++;
+    }
+    if(neu>0) await speichern('bvb_erg_'+key, ergebnisseData[key]);
+    manualStatus = neu>0 ? `${neu} Ergebnis${neu===1?'':'se'} ergänzt.` : 'Keine neuen Ergebnisse gefunden.';
+  }catch(e){
+    manualFehler=(e&&e.message)?e.message:'Unbekannter Fehler';
+  }
+  manualLade=false; render();
+}
+
 /* ================= Steuerung ================= */
 function buildTeamSwitch(){
   const el=document.getElementById('teamswitch');
@@ -361,7 +388,7 @@ function buildTeamSwitch(){
   ).join('');
 }
 async function setTeam(t){
-  team=t; wettFilter='alle'; offenerEditor=null; formularOffen=false;
+  team=t; wettFilter='alle'; offenerEditor=null; formularOffen=false; manualStatus=''; manualFehler='';
   TEAM_ORDER.forEach(k=>document.getElementById('btnTeam_'+k).classList.toggle('aktiv', k===t));
   if(TEAMS[t].mode==='manual' && !ergebnisseData[t]){
     render();
@@ -537,7 +564,10 @@ function render(){
       <button class="chip ${wettFilter==='alle'?'aktiv':''}" onclick="setFilter('alle')">Alle</button>
       ${wettKeys.map(k=>`<button class="chip ${wettFilter===k?'aktiv':''}" onclick="setFilter('${k}')">${cfg.comps[k]}</button>`).join('')}
       <button class="chip aktion" onclick="toggleFormular()">+ Spiel</button>
+      <button class="chip" ${manualLade?'disabled':''} onclick="ergebnisseAktualisieren()">${manualLade?'⏳ Suche …':'↻ Ergebnisse aktualisieren'}</button>
     </div>
+    ${manualStatus?`<div class="hinweis">${esc(manualStatus)}</div>`:''}
+    ${manualFehler?`<div class="hinweis fehler">Suche fehlgeschlagen: ${esc(manualFehler)}</div>`:''}
     <div class="hinweis">Spiel antippen, um ein Ergebnis einzutragen. Neue Termine fügst du über „+ Spiel" hinzu. ${cloudStatusHTML()}</div>`+
     (formularOffen?`<div class="formular">
       <label>Datum</label><input type="date" id="fDatum">
