@@ -10,6 +10,9 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-180.png">
 <title>BVB Spielplan</title>
+<!-- Firebase (Cloud-Sync). Aktiv erst, sobald firebaseConfig unten ausgefuellt ist. -->
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
 <style>
   :root{
     --gelb:#FDE100;
@@ -30,9 +33,12 @@
   header h1{font-size:22px;font-weight:900;font-style:italic;letter-spacing:.5px;line-height:1.05;}
   header p{font-size:12px;font-weight:600;margin-top:2px;opacity:.75;}
 
-  .teamswitch{display:flex;background:#000;padding:10px 16px;gap:8px;}
-  .teamswitch button{flex:1;padding:10px 0;border:2px solid var(--gelb);background:transparent;
-    color:var(--gelb);font-weight:800;font-style:italic;font-size:15px;border-radius:6px;cursor:pointer;}
+  .teamswitch{display:flex;background:#000;padding:10px 12px;gap:6px;
+    overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+  .teamswitch::-webkit-scrollbar{display:none;}
+  .teamswitch button{flex:0 0 auto;padding:9px 14px;border:2px solid var(--gelb);background:transparent;
+    color:var(--gelb);font-weight:800;font-style:italic;font-size:13px;border-radius:6px;cursor:pointer;
+    white-space:nowrap;}
   .teamswitch button.aktiv{background:var(--gelb);color:#000;}
 
   .subtabs{display:flex;border-bottom:1px solid var(--linie);margin:0 16px;}
@@ -108,6 +114,9 @@
 
   .lade{text-align:center;color:var(--grau);padding:30px 0;font-size:14px;}
   .stand{text-align:center;color:var(--grau);font-size:11px;margin-top:14px;}
+  .cloudpunkt{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;
+    background:var(--grau);vertical-align:1px;}
+  .cloudpunkt.an{background:#3DBE6C;}
 </style>
 </head>
 <body>
@@ -117,11 +126,7 @@
   <p>Spielplan &amp; Ergebnisse · Saison 2026/27</p>
 </header>
 
-<div class="teamswitch">
-  <button id="btnHerren" class="aktiv" onclick="setTeam('herren')">HERREN</button>
-  <button id="btnDamen" onclick="setTeam('damen')">DAMEN</button>
-</div>
-
+<div class="teamswitch" id="teamswitch"></div>
 <div class="subtabs">
   <button id="tabSpiele" class="aktiv" onclick="setTab('spiele')">Spielplan</button>
   <button id="tabTabelle" onclick="setTab('tabelle')">Tabelle</button>
@@ -130,44 +135,141 @@
 <main id="inhalt"><div class="lade">Lade …</div></main>
 
 <script>
+/* ================= FIREBASE CONFIG =================
+   Cloud-Synchronisierung zwischen mehreren Geraeten (iPhone/iPad).
+   Sobald das Objekt unten ausgefuellt ist, synchronisiert die App
+   automatisch ueber Firestore. Vorher laeuft alles rein lokal (wie bisher).
+   -> firebaseConfig = { apiKey: "...", authDomain: "...", projectId: "...", ... };
+*/
+const firebaseConfig = null;
+
+let fsDB = null, fsReady = false;
+try{
+  if(firebaseConfig){
+    const fbApp = firebase.initializeApp(firebaseConfig);
+    fsDB = firebase.firestore();
+    fsReady = true;
+  }
+}catch(e){ fsReady = false; }
+
+/* ================= Team-Definitionen ================= */
+const TEAMS = {
+  herren: {label:'HERREN', mode:'live'},
+  damen: {label:'DAMEN', mode:'manual',
+    comps:{RL:'Regionalliga West', WP:'Westfalenpokal'},
+    tableUrl:'https://www.fussball.de/spieltagsuebersicht/frauen-regionalliga-west-deutschland-frauen-regionalliga-west-frauen-saison2627-deutschland/-/staffel/031C36DAM8000003VS5489BUVUR5FS5A-G',
+    schedule:[
+      {id:'d01',comp:'RL',dt:'2026-08-30T15:00',heim:'SSV Rhade',gast:'Borussia Dortmund'},
+      {id:'d02',comp:'RL',dt:'2026-09-06T15:00',heim:'Borussia Dortmund',gast:'DJK Wacker Mecklenbeck'},
+      {id:'d03',comp:'WP',dt:'2026-09-09T19:00',heim:'Borussia Dortmund',gast:'1. FFC Recklinghausen'},
+      {id:'d04',comp:'RL',dt:'2026-09-13T15:30',heim:'MSV Duisburg',gast:'Borussia Dortmund'},
+      {id:'d05',comp:'RL',dt:'2026-09-20T15:00',heim:'SV Fortuna Freudenberg',gast:'Borussia Dortmund'},
+      {id:'d06',comp:'RL',dt:'2026-09-27T15:00',heim:'Borussia Dortmund',gast:'FSV Gütersloh'},
+      {id:'d07',comp:'RL',dt:'2026-10-04T15:30',heim:'DJK Südwest Köln',gast:'Borussia Dortmund'},
+      {id:'d08',comp:'RL',dt:'2026-10-11T15:00',heim:'Borussia Dortmund',gast:'Rhenania Bottrop'},
+      {id:'d09',comp:'RL',dt:'2026-10-18T15:00',heim:'Vorwärts Spoho Köln',gast:'Borussia Dortmund'},
+      {id:'d10',comp:'RL',dt:'2026-10-25T15:00',heim:'Borussia Dortmund',gast:'SGS Essen U21'},
+      {id:'d11',comp:'RL',dt:'2026-11-08T13:00',heim:'SC Fortuna Köln',gast:'Borussia Dortmund'}
+    ]},
+  u23: {label:'U23', mode:'manual',
+    comps:{RL:'Regionalliga West'},
+    tableUrl:'https://www.fussball.de/spieltagsuebersicht/regionalliga-west-deutschland-regionalliga-west-herren-saison2627-deutschland/-/staffel/031253DN8G000005VS5489BTVT51B5B5-G',
+    schedule:[
+      {id:'u23_01',comp:'RL',dt:'2026-08-29T14:00',heim:'VfB 03 Hilden',gast:'Borussia Dortmund U23'},
+      {id:'u23_02',comp:'RL',dt:'2026-09-01T19:30',heim:'Borussia Dortmund U23',gast:'FC Schalke 04 U23'},
+      {id:'u23_03',comp:'RL',dt:'2026-09-05T14:00',heim:'Borussia Mönchengladbach U23',gast:'Borussia Dortmund U23'},
+      {id:'u23_04',comp:'RL',dt:'2026-09-13T14:00',heim:'Borussia Dortmund U23',gast:'SV Rödinghausen'},
+      {id:'u23_05',comp:'RL',dt:'2026-09-16T19:30',heim:'Borussia Dortmund U23',gast:'SV Westfalia Rhynern'},
+      {id:'u23_06',comp:'RL',dt:'2026-09-21T18:00',heim:'SC Paderborn 07 U23',gast:'Borussia Dortmund U23'},
+      {id:'u23_07',comp:'RL',dt:'2026-09-26T14:00',heim:'Borussia Dortmund U23',gast:'1. FC Bocholt'},
+      {id:'u23_08',comp:'RL',dt:'2026-10-03T14:00',heim:'Sportfreunde Siegen',gast:'Borussia Dortmund U23'},
+      {id:'u23_09',comp:'RL',dt:'2026-10-10T14:00',heim:'Borussia Dortmund U23',gast:'SG Wattenscheid 09'},
+      {id:'u23_10',comp:'RL',dt:'2026-10-17T14:00',heim:'SC Wiedenbrück',gast:'Borussia Dortmund U23'},
+      {id:'u23_11',comp:'RL',dt:'2026-10-24T14:00',heim:'Borussia Dortmund U23',gast:'Bonner SC'}
+    ]},
+  u19: {label:'U19', mode:'manual',
+    comps:{BL:'A-Junioren-Bundesliga'},
+    tableUrl:'https://www.fussball.de/spieltagsuebersicht/vorrunde-gruppe-h--u19-dfb-nachwuchsliga-deutschland-a-junioren-bundesliga-a-junioren-saison2627-deutschland/-/staffel/031983L5AO00000JVS5489BUVV628VP4-G',
+    schedule:[
+      {id:'u19_01',comp:'BL',dt:'2026-08-26T11:00',heim:'MSV Duisburg',gast:'Borussia Dortmund'},
+      {id:'u19_02',comp:'BL',dt:'2026-09-05T11:00',heim:'Borussia Dortmund',gast:'Rot-Weiss Essen'},
+      {id:'u19_03',comp:'BL',dt:'2026-09-13T11:00',heim:'Fortuna Düsseldorf',gast:'Borussia Dortmund'},
+      {id:'u19_04',comp:'BL',dt:'2026-10-17T11:00',heim:'Borussia Dortmund',gast:'SC Rot-Weiß Oberhausen'},
+      {id:'u19_05',comp:'BL',dt:'2026-10-25T11:00',heim:'FC Schalke 04',gast:'Borussia Dortmund'},
+      {id:'u19_06',comp:'BL',dt:'2026-10-31T11:00',heim:'Borussia Dortmund',gast:'MSV Duisburg'},
+      {id:'u19_07',comp:'BL',dt:'2026-11-07T13:00',heim:'Borussia Dortmund',gast:'VfL Osnabrück'},
+      {id:'u19_08',comp:'BL',dt:'2026-11-21T11:00',heim:'Rot-Weiss Essen',gast:'Borussia Dortmund'},
+      {id:'u19_09',comp:'BL',dt:'2026-11-29T11:00',heim:'Borussia Dortmund',gast:'Fortuna Düsseldorf'}
+    ]},
+  u17: {label:'U17', mode:'manual',
+    comps:{BL:'B-Junioren-Bundesliga', PO:'Regionalpokal'},
+    tableUrl:'https://www.fussball.de/spieltagsuebersicht/vorrunde-gruppe-g--u17-dfb-nachwuchsliga-deutschland-b-junioren-bundesliga-b-junioren-saison2627-deutschland/-/staffel/031984MJUO00000OVS5489BUVV628VP4-G',
+    schedule:[
+      {id:'u17_01',comp:'BL',dt:'2026-08-22T11:00',heim:'MSV Duisburg',gast:'Borussia Dortmund'},
+      {id:'u17_02',comp:'PO',dt:'2026-08-26T18:30',heim:'Rot-Weiss Essen',gast:'Borussia Dortmund'},
+      {id:'u17_03',comp:'BL',dt:'2026-08-30T11:00',heim:'Borussia Dortmund',gast:'FC Schalke 04'},
+      {id:'u17_04',comp:'BL',dt:'2026-09-05T13:00',heim:'Rot-Weiss Essen',gast:'Borussia Dortmund'},
+      {id:'u17_05',comp:'BL',dt:'2026-09-12T13:00',heim:'Borussia Dortmund',gast:'VFL Osnabrück'},
+      {id:'u17_06',comp:'BL',dt:'2026-09-19T11:00',heim:'SC Preußen Münster',gast:'Borussia Dortmund'},
+      {id:'u17_07',comp:'BL',dt:'2026-10-10T13:00',heim:'Wuppertaler SV',gast:'Borussia Dortmund'},
+      {id:'u17_08',comp:'BL',dt:'2026-10-18T11:00',heim:'Borussia Dortmund',gast:'VfL Bochum 1848'},
+      {id:'u17_09',comp:'BL',dt:'2026-10-25T11:00',heim:'Borussia Dortmund',gast:'MSV Duisburg'}
+    ]},
+  frauen2: {label:'FRAUEN II', mode:'manual',
+    comps:{VL:'Westfalenliga'},
+    tableUrl:'https://www.fussball.de/spieltagsuebersicht/frauen-westfalenliga-westfalen-frauen-verbandsliga-frauen-saison2627-westfalen/-/staffel/0314GURVOK000012VS5489BUVSBBVPEU-G',
+    schedule:[
+      {id:'f2_01',comp:'VL',dt:'2026-08-30T17:00',heim:'Borussia Dortmund II',gast:'TuS Wadersloh'},
+      {id:'f2_02',comp:'VL',dt:'2026-09-06T15:30',heim:'SV Oesbern',gast:'Borussia Dortmund II'},
+      {id:'f2_03',comp:'VL',dt:'2026-09-13T17:00',heim:'Borussia Dortmund II',gast:'SV Thülen'},
+      {id:'f2_04',comp:'VL',dt:'2026-09-20T17:00',heim:'Borussia Dortmund II',gast:'DSC Arminia Bielefeld U21'},
+      {id:'f2_05',comp:'VL',dt:'2026-09-27T13:00',heim:'SV Germania Hauenhorst',gast:'Borussia Dortmund II'},
+      {id:'f2_06',comp:'VL',dt:'2026-10-04T17:00',heim:'Borussia Dortmund II',gast:'DJK GW Amelsbüren'},
+      {id:'f2_07',comp:'VL',dt:'2026-10-11T15:00',heim:'DJK VfL Billerbeck',gast:'Borussia Dortmund II'},
+      {id:'f2_08',comp:'VL',dt:'2026-10-18T17:00',heim:'Borussia Dortmund II',gast:'FC Iserlohn'},
+      {id:'f2_09',comp:'VL',dt:'2026-10-25T15:30',heim:'SVKT 07 Minden',gast:'Borussia Dortmund II'},
+      {id:'f2_10',comp:'VL',dt:'2026-11-08T17:00',heim:'Borussia Dortmund II',gast:'SuS Concordia Flaesheim'},
+      {id:'f2_11',comp:'VL',dt:'2026-11-15T15:00',heim:'VfL Bochum 1848 II',gast:'Borussia Dortmund II'}
+    ]}
+};
+const TEAM_ORDER = ['herren','damen','u23','u19','u17','frauen2'];
+
 /* ================= Zustand ================= */
 let team='herren', tab='spiele', wettFilter='alle';
 let herrenSpiele=null, herrenTabelle=null, herrenFehler=false;
 let ladeText='Lade Spielplan …', quelleClaude=false, fehlerDetail='';
-let damenErgebnisse={}, damenExtra=[], offenerEditor=null, formularOffen=false;
+let ergebnisseData={}, extraData={}, offenerEditor=null, formularOffen=false;
 const mem={};
 
-/* ================= Speicher (window.storage -> localStorage -> RAM) ================= */
+/* ================= Speicher: Firestore (falls konfiguriert) + localStorage ================= */
 async function speichern(key,val){
   const s=JSON.stringify(val); mem[key]=s;
-  try{ if(window.storage){ await window.storage.set(key,s); return; } }catch(e){}
   try{ localStorage.setItem(key,s); }catch(e){}
+  if(fsReady){
+    try{ await fsDB.collection('bvb_data').doc(key).set({value:s, updated:Date.now()}); }catch(e){}
+  }
 }
 async function laden(key){
-  try{ if(window.storage){ const r=await window.storage.get(key); if(r&&r.value)return JSON.parse(r.value); } }catch(e){}
+  if(fsReady){
+    try{
+      const snap = await fsDB.collection('bvb_data').doc(key).get();
+      if(snap.exists && snap.data().value){
+        const v = snap.data().value;
+        try{ localStorage.setItem(key, v); }catch(e){}
+        return JSON.parse(v);
+      }
+    }catch(e){}
+  }
   try{ const v=localStorage.getItem(key); if(v)return JSON.parse(v); }catch(e){}
   if(mem[key])return JSON.parse(mem[key]);
   return null;
 }
+async function ladeTeamDaten(key){
+  ergebnisseData[key] = (await laden('bvb_erg_'+key)) || {};
+  extraData[key] = (await laden('bvb_extra_'+key)) || [];
+}
 
-/* ================= Damen: fester Spielplan (Stand 01.09.2026) ================= */
-const WETT={RL:'Regionalliga West',WP:'Westfalenpokal'};
-const damenBasis=[
- {id:'d01',comp:'RL',dt:'2026-08-30T15:00',heim:'SSV Rhade',gast:'Borussia Dortmund'},
- {id:'d02',comp:'RL',dt:'2026-09-06T15:00',heim:'Borussia Dortmund',gast:'DJK Wacker Mecklenbeck'},
- {id:'d03',comp:'WP',dt:'2026-09-09T19:00',heim:'Borussia Dortmund',gast:'1. FFC Recklinghausen'},
- {id:'d04',comp:'RL',dt:'2026-09-13T15:30',heim:'MSV Duisburg',gast:'Borussia Dortmund'},
- {id:'d05',comp:'RL',dt:'2026-09-20T15:00',heim:'SV Fortuna Freudenberg',gast:'Borussia Dortmund'},
- {id:'d06',comp:'RL',dt:'2026-09-27T15:00',heim:'Borussia Dortmund',gast:'FSV Gütersloh'},
- {id:'d07',comp:'RL',dt:'2026-10-04T15:30',heim:'DJK Südwest Köln',gast:'Borussia Dortmund'},
- {id:'d08',comp:'RL',dt:'2026-10-11T15:00',heim:'Borussia Dortmund',gast:'Rhenania Bottrop'},
- {id:'d09',comp:'RL',dt:'2026-10-18T15:00',heim:'Vorwärts Spoho Köln',gast:'Borussia Dortmund'},
- {id:'d10',comp:'RL',dt:'2026-10-25T15:00',heim:'Borussia Dortmund',gast:'SGS Essen U21'},
- {id:'d11',comp:'RL',dt:'2026-11-08T13:00',heim:'SC Fortuna Köln',gast:'Borussia Dortmund'}
-];
-const DAMEN_TABELLE_URL='https://www.fussball.de/spieltagsuebersicht/frauen-regionalliga-west-deutschland-frauen-regionalliga-west-frauen-saison2627-deutschland/-/staffel/031C36DAM8000003VS5489BUVUR5FS5A-G';
-
-/* ================= Herren: OpenLigaDB ================= */
+/* ================= Herren: OpenLigaDB (+ Claude-Fallback) ================= */
 async function fetchTimeout(url,ms){
   const c=new AbortController();
   const t=setTimeout(()=>c.abort(),ms);
@@ -202,7 +304,6 @@ async function ladeHerren(){
   render();
 }
 
-/* Zweiter Datenweg: funktioniert innerhalb der Claude-App, wo externe APIs blockiert sind */
 async function claudeFrage(prompt){
   const resp=await fetch('https://api.anthropic.com/v1/messages',{
     method:'POST',headers:{'Content-Type':'application/json'},
@@ -240,14 +341,28 @@ function fmtZeit(d){return String(d.getHours()).padStart(2,'0')+':'+String(d.get
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function istBVBName(n){return n.includes('Dortmund');}
 
-function damenAlle(){
-  return [...damenBasis,...damenExtra].sort((a,b)=>new Date(a.dt)-new Date(b.dt));
+function alleSpieleFuer(key){
+  const cfg=TEAMS[key];
+  return [...cfg.schedule,...(extraData[key]||[])].sort((a,b)=>new Date(a.dt)-new Date(b.dt));
 }
 
 /* ================= Steuerung ================= */
-function setTeam(t){team=t;wettFilter='alle';offenerEditor=null;formularOffen=false;
-  document.getElementById('btnHerren').classList.toggle('aktiv',t==='herren');
-  document.getElementById('btnDamen').classList.toggle('aktiv',t==='damen');
+function buildTeamSwitch(){
+  const el=document.getElementById('teamswitch');
+  el.innerHTML = TEAM_ORDER.map(k=>
+    `<button id="btnTeam_${k}" class="${k===team?'aktiv':''}" onclick="setTeam('${k}')">${TEAMS[k].label}</button>`
+  ).join('');
+}
+async function setTeam(t){
+  team=t; wettFilter='alle'; offenerEditor=null; formularOffen=false;
+  TEAM_ORDER.forEach(k=>document.getElementById('btnTeam_'+k).classList.toggle('aktiv', k===t));
+  if(TEAMS[t].mode==='manual' && !ergebnisseData[t]){
+    render();
+    await ladeTeamDaten(t);
+  }else if(TEAMS[t].mode==='manual'){
+    // beim Wechsel neu vom Server holen, damit Aenderungen vom anderen Geraet ankommen
+    ladeTeamDaten(t).then(render);
+  }
   render();
 }
 function setTab(t){tab=t;offenerEditor=null;formularOffen=false;
@@ -262,13 +377,13 @@ function toggleFormular(){formularOffen=!formularOffen;render();}
 async function ergebnisSpeichern(id){
   const h=document.getElementById('inH').value, g=document.getElementById('inG').value;
   if(h===''||g===''){alert('Bitte beide Tore eintragen.');return;}
-  damenErgebnisse[id]={h:parseInt(h,10),g:parseInt(g,10)};
-  await speichern('bvb_damen_ergebnisse',damenErgebnisse);
+  ergebnisseData[team][id]={h:parseInt(h,10),g:parseInt(g,10)};
+  await speichern('bvb_erg_'+team, ergebnisseData[team]);
   offenerEditor=null;render();
 }
 async function ergebnisLoeschen(id){
-  delete damenErgebnisse[id];
-  await speichern('bvb_damen_ergebnisse',damenErgebnisse);
+  delete ergebnisseData[team][id];
+  await speichern('bvb_erg_'+team, ergebnisseData[team]);
   offenerEditor=null;render();
 }
 async function spielHinzufuegen(){
@@ -276,29 +391,31 @@ async function spielHinzufuegen(){
   const heim=document.getElementById('fHeim').value.trim(), gast=document.getElementById('fGast').value.trim();
   const comp=document.getElementById('fWett').value;
   if(!d||!heim||!gast){alert('Bitte Datum, Heim und Gast ausfüllen.');return;}
-  damenExtra.push({id:'x'+Date.now(),comp,dt:d+'T'+z,heim,gast,extra:true});
-  await speichern('bvb_damen_extra',damenExtra);
+  extraData[team]=extraData[team]||[];
+  extraData[team].push({id:'x'+Date.now(),comp,dt:d+'T'+z,heim,gast,extra:true});
+  await speichern('bvb_extra_'+team, extraData[team]);
   formularOffen=false;render();
 }
 async function spielEntfernen(id){
   if(!confirm('Dieses Spiel entfernen?'))return;
-  damenExtra=damenExtra.filter(s=>s.id!==id);
-  delete damenErgebnisse[id];
-  await speichern('bvb_damen_extra',damenExtra);
-  await speichern('bvb_damen_ergebnisse',damenErgebnisse);
+  extraData[team]=(extraData[team]||[]).filter(s=>s.id!==id);
+  delete ergebnisseData[team][id];
+  await speichern('bvb_extra_'+team, extraData[team]);
+  await speichern('bvb_erg_'+team, ergebnisseData[team]);
   render();
 }
 
 /* ================= Darstellung ================= */
 function heroHTML(spiele){
   const jetzt=new Date();
-  const n=spiele.find(s=>new Date(s.dt)>jetzt&&(team==='herren'?!s.fertig:!damenErgebnisse[s.id]));
+  const cfg=TEAMS[team];
+  const n=spiele.find(s=>new Date(s.dt)>jetzt&&(team==='herren'?!s.fertig:!ergebnisseData[team][s.id]));
   if(!n)return '';
   const d=new Date(n.dt);
   const heimspiel=istBVBName(n.heim);
   const gegner=heimspiel?n.gast:n.heim;
   const tage=Math.ceil((d-jetzt)/86400000);
-  const wett=team==='herren'?(n.comp==='BL'?'Bundesliga':'DFB-Pokal'):WETT[n.comp];
+  const wett=team==='herren'?(n.comp==='BL'?'Bundesliga':'DFB-Pokal'):cfg.comps[n.comp];
   return `<div class="hero">
     <div class="etikett">NÄCHSTES SPIEL · ${tage<=0?'HEUTE':(tage===1?'MORGEN':'IN '+tage+' TAGEN')}</div>
     <div class="paarung">${heimspiel?'BVB – '+esc(gegner):esc(gegner)+' – BVB'}</div>
@@ -307,10 +424,11 @@ function heroHTML(spiele){
 }
 
 function spielZeile(s){
+  const cfg=TEAMS[team];
   const d=new Date(s.dt);
   const heimspiel=istBVBName(s.heim);
   const gegner=heimspiel?s.gast:s.heim;
-  const wett=team==='herren'?(s.comp==='BL'?'Bundesliga':'DFB-Pokal'):WETT[s.comp];
+  const wett=team==='herren'?(s.comp==='BL'?'Bundesliga':'DFB-Pokal'):cfg.comps[s.comp];
   let ergHtml, klasse='offen', klickbar='';
   if(team==='herren'){
     if(s.fertig&&s.pH!==null){
@@ -320,7 +438,7 @@ function spielZeile(s){
     }else ergHtml='–:–';
   }else{
     klickbar='klickbar';
-    const e=damenErgebnisse[s.id];
+    const e=ergebnisseData[team][s.id];
     if(e){
       const bvbTore=heimspiel?e.h:e.g, gegTore=heimspiel?e.g:e.h;
       klasse=bvbTore>gegTore?'sieg':'';
@@ -328,20 +446,20 @@ function spielZeile(s){
     }else ergHtml=new Date(s.dt)<new Date()?'eintragen':'–:–';
   }
   const marke=`<span class="heimzeichen ${heimspiel?'':'ausw'}">${heimspiel?'H':'A'}</span>`;
-  let html=`<div class="spiel ${klickbar}" ${team==='damen'?`onclick="toggleEditor('${s.id}')"`:''}>
+  let html=`<div class="spiel ${klickbar}" ${team!=='herren'?`onclick="toggleEditor('${s.id}')"`:''}>
     <div class="datum"><div class="tag">${fmtTag(d)}</div><div class="zeit">${fmtZeit(d)}</div></div>
     <div class="mitte"><div class="gegner">${esc(gegner)}${marke}</div><div class="wett">${wett}</div></div>
     <div class="erg ${klasse}">${ergHtml}</div>
   </div>`;
-  if(team==='damen'&&offenerEditor===s.id){
-    const e=damenErgebnisse[s.id]||{h:'',g:''};
+  if(team!=='herren'&&offenerEditor===s.id){
+    const e=ergebnisseData[team][s.id]||{h:'',g:''};
     html+=`<div class="editor">
       <div class="zeile"><span style="font-size:13px;font-weight:700">${esc(s.heim)}</span>
       <input type="number" id="inH" min="0" value="${e.h}"> : <input type="number" id="inG" min="0" value="${e.g}">
       <span style="font-size:13px;font-weight:700">${esc(s.gast)}</span></div>
       <div class="knoepfe">
         <button class="speichern" onclick="ergebnisSpeichern('${s.id}')">Ergebnis speichern</button>
-        ${damenErgebnisse[s.id]?`<button class="loeschen" onclick="ergebnisLoeschen('${s.id}')">Löschen</button>`:''}
+        ${ergebnisseData[team][s.id]?`<button class="loeschen" onclick="ergebnisLoeschen('${s.id}')">Löschen</button>`:''}
         ${s.extra?`<button class="loeschen" onclick="spielEntfernen('${s.id}')">Spiel entfernen</button>`:''}
       </div>
     </div>`;
@@ -360,12 +478,16 @@ function spielListe(spiele){
   return html||'<div class="lade">Keine Spiele gefunden.</div>';
 }
 
+function cloudStatusHTML(){
+  return `<span class="cloudpunkt ${fsReady?'an':''}"></span>${fsReady?'Cloud-Sync aktiv':'Nur lokal gespeichert'}`;
+}
+
 function render(){
   const el=document.getElementById('inhalt');
-  /* ---- HERREN ---- */
+  /* ---- HERREN (live) ---- */
   if(team==='herren'){
     if(tab==='tabelle'){
-      if(herrenFehler){el.innerHTML='<div class="hinweis fehler">Live-Daten konnten nicht geladen werden. Prüfe die Internetverbindung und tippe auf „Aktualisieren“ im Spielplan.</div>';return;}
+      if(herrenFehler){el.innerHTML='<div class="hinweis fehler">Live-Daten konnten nicht geladen werden.'+(fehlerDetail?' Fehler: '+esc(fehlerDetail):'')+'</div>';return;}
       if(!herrenTabelle){
         el.innerHTML=herrenSpiele
           ?'<div class="hinweis">Tabelle konnte über diesen Datenweg nicht geladen werden. Tippe im Spielplan auf „Aktualisieren", um es erneut zu versuchen.</div>'
@@ -376,7 +498,7 @@ function render(){
         <td>${i+1}</td><td class="links">${esc(t.teamName)}</td><td>${t.matches}</td>
         <td>${t.goals}:${t.opponentGoals}</td><td>${t.goalDiff}</td><td><b>${t.points}</b></td></tr>`).join('');
       el.innerHTML=`<table><tr><th>#</th><th class="links">Verein</th><th>Sp</th><th>Tore</th><th>Diff</th><th>Pkt</th></tr>${rows}</table>
-        <div class="stand">Bundesliga 2026/27</div><div class="stand">Quelle: '+(quelleClaude?'Websuche über Claude':'OpenLigaDB')+'</div>`;
+        <div class="stand">Bundesliga 2026/27 · Quelle: ${quelleClaude?'Websuche über Claude':'OpenLigaDB'}</div>`;
       return;
     }
     if(herrenFehler){el.innerHTML=`<div class="hinweis fehler">Live-Daten konnten nicht geladen werden.${fehlerDetail?' Fehler: '+esc(fehlerDetail):''}</div>
@@ -390,30 +512,32 @@ function render(){
         <button class="chip ${wettFilter==='PO'?'aktiv':''}" onclick="setFilter('PO')">DFB-Pokal</button>
         <button class="chip aktion" onclick="ladeHerren()">↻ Aktualisieren</button>
       </div>`+spielListe(gefiltert)+
-      '<div class="stand">Live-Daten: OpenLigaDB</div>';
+      '<div class="stand">Live-Daten: '+(quelleClaude?'Websuche über Claude':'OpenLigaDB')+'</div>';
     return;
   }
-  /* ---- DAMEN ---- */
+  /* ---- Alle anderen Teams (manuell) ---- */
+  const cfg=TEAMS[team];
+  if(!ergebnisseData[team]){ el.innerHTML='<div class="lade">Lade …</div>'; return; }
   if(tab==='tabelle'){
-    el.innerHTML=`<div class="hinweis">Für die Frauen-Regionalliga West gibt es keine kostenlosen Live-Daten. Die aktuelle Tabelle findest du direkt bei fussball.de:</div>
-      <a class="grossknopf" href="${DAMEN_TABELLE_URL}" target="_blank" rel="noopener">Tabelle auf fussball.de öffnen</a>`;
+    el.innerHTML=`<div class="hinweis">Für ${cfg.label==='DAMEN'?'die Damen':cfg.label} gibt es keine kostenlosen Live-Daten. Die aktuelle Tabelle findest du direkt bei fussball.de:</div>
+      <a class="grossknopf" href="${cfg.tableUrl}" target="_blank" rel="noopener">Tabelle auf fussball.de öffnen</a>`;
     return;
   }
-  const alle=damenAlle().filter(s=>wettFilter==='alle'||s.comp===wettFilter);
-  el.innerHTML=heroHTML(damenAlle())+
+  const wettKeys=Object.keys(cfg.comps);
+  const alle=alleSpieleFuer(team).filter(s=>wettFilter==='alle'||s.comp===wettFilter);
+  el.innerHTML=heroHTML(alleSpieleFuer(team))+
     `<div class="werkzeuge">
       <button class="chip ${wettFilter==='alle'?'aktiv':''}" onclick="setFilter('alle')">Alle</button>
-      <button class="chip ${wettFilter==='RL'?'aktiv':''}" onclick="setFilter('RL')">Regionalliga</button>
-      <button class="chip ${wettFilter==='WP'?'aktiv':''}" onclick="setFilter('WP')">Pokal</button>
+      ${wettKeys.map(k=>`<button class="chip ${wettFilter===k?'aktiv':''}" onclick="setFilter('${k}')">${cfg.comps[k]}</button>`).join('')}
       <button class="chip aktion" onclick="toggleFormular()">+ Spiel</button>
     </div>
-    <div class="hinweis">Spiel antippen, um ein Ergebnis einzutragen. Neue Termine (z.&nbsp;B. Rückrunde) fügst du über „+ Spiel" hinzu.</div>`+
+    <div class="hinweis">Spiel antippen, um ein Ergebnis einzutragen. Neue Termine fügst du über „+ Spiel" hinzu. ${cloudStatusHTML()}</div>`+
     (formularOffen?`<div class="formular">
       <label>Datum</label><input type="date" id="fDatum">
       <label>Uhrzeit</label><input type="time" id="fZeit" value="15:00">
       <label>Heimmannschaft</label><input type="text" id="fHeim" placeholder="z. B. Borussia Dortmund">
       <label>Gastmannschaft</label><input type="text" id="fGast" placeholder="z. B. FC Schalke 04">
-      <label>Wettbewerb</label><select id="fWett"><option value="RL">Regionalliga West</option><option value="WP">Westfalenpokal</option></select>
+      <label>Wettbewerb</label><select id="fWett">${wettKeys.map(k=>`<option value="${k}">${cfg.comps[k]}</option>`).join('')}</select>
       <div class="knoepfe"><button class="speichern" onclick="spielHinzufuegen()">Hinzufügen</button>
       <button class="abbrechen" onclick="toggleFormular()">Abbrechen</button></div>
     </div>`:'')+
@@ -423,8 +547,9 @@ function render(){
 
 /* ================= Start ================= */
 (async function(){
-  damenErgebnisse=(await laden('bvb_damen_ergebnisse'))||{};
-  damenExtra=(await laden('bvb_damen_extra'))||[];
+  buildTeamSwitch();
+  render();
+  await ladeTeamDaten('damen');
   render();
   ladeHerren();
 })();
